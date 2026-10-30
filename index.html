@@ -54,28 +54,37 @@ const ICON={phone:'📱',desktop:'🖥️',tablet:'📲'};
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const toast=t=>{const e=$('#toast');e.textContent=t;e.classList.add('on');setTimeout(()=>e.classList.remove('on'),1600)};
 const ls={get:k=>{try{return localStorage.getItem(k)}catch(e){return null}},set:(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}},del:k=>{try{localStorage.removeItem(k)}catch(e){}}};
-let code=ls.get('code'),who=ls.get('who'),cfg={key:'',expires:''},members=[],logs=[],unsubs=[],joined=false;
+let code=ls.get('code'),who=ls.get('who'),cfg={key:'',expires:''},members=[],logs=[],unsubs=[],joined=false,seen=false;
 
-function login(){
+function login(msg){
  $('#out').hidden=true;
  app.innerHTML=`<div class="card"><b>🔐 Вход в группу</b><p class="mut">Введите ваш ник и код группы. Под этим ником вы сразу появитесь в списке участников. Код один на всех, его даёт тот, кто создал группу. Новый код создаст новую группу.</p>
  <input id="nm" placeholder="Ваш ник" maxlength="30" value="${esc(who||'')}" style="margin-bottom:8px"><input id="cd" placeholder="Код группы (от 6 символов)" autocapitalize="off" style="margin-bottom:8px"><div class="err" id="er"></div><button class="p" id="go" style="width:100%">Войти</button></div>`;
+ if(msg)$('#er').textContent=msg;
  $('#go').onclick=()=>{const n=$('#nm').value.trim(),c=$('#cd').value.trim().toLowerCase().replace(/[\/\s]/g,'');
   if(!n)return $('#er').textContent='Введите ник';if(c.length<6)return $('#er').textContent='Код должен быть от 6 символов';
-  who=n;code=c;ls.set('who',n);ls.set('code',c);start()};
+  who=n;code=c;ls.set('who',n);ls.set('code',c);ls.del('in');ls.del('mid');start()};
 }
 function start(){
- unsubs.forEach(u=>u());unsubs=[];joined=false;cfg={key:'',expires:''};members=[];logs=[];
+ unsubs.forEach(u=>u());unsubs=[];joined=false;seen=false;cfg={key:'',expires:''};members=[];logs=[];
  $('#out').hidden=false;render();
  const live=ok=>$('#live').classList.toggle('on',ok);
  const err=e=>{app.innerHTML=`<div class="card"><b>Нет доступа</b><p class="mut">${esc(e.message)}</p></div>`};
  unsubs.push(onSnapshot(doc(db,'g',code,'d','main'),{includeMetadataChanges:true},s=>{live(!s.metadata.fromCache);cfg={key:'',expires:'',...(s.data()||{})};render()},err));
- unsubs.push(onSnapshot(collection(db,'g',code,'members'),{includeMetadataChanges:true},s=>{members=s.docs.map(d=>({id:d.id,devices:[],...d.data()})).sort((a,b)=>(a.ts||0)-(b.ts||0));render();if(!s.metadata.fromCache&&!joined){joined=true;join()}},err));
+ unsubs.push(onSnapshot(collection(db,'g',code,'members'),{includeMetadataChanges:true},s=>{members=s.docs.map(d=>({id:d.id,devices:[],...d.data()})).sort((a,b)=>(a.ts||0)-(b.ts||0));const me=meOf();
+  if(!s.metadata.fromCache){
+   if(!joined){joined=true;if(!me){if(ls.get('in')==='1')return kick();join()}}
+   else if(!me&&seen)return kick();
+  }
+  if(me){seen=true;ls.set('in','1');ls.set('mid',me.id);if(me.name!==who){who=me.name;ls.set('who',who)}}
+  render()},err));
  unsubs.push(onSnapshot(query(collection(db,'g',code,'log'),orderBy('ts','desc'),limit(15)),s=>{logs=s.docs.map(d=>d.data());render()},()=>{}));
 }
 const mc=id=>doc(db,'g',code,'members',id);
 const hid=n=>{let h=0;for(const c of n.toLowerCase())h=(h*31+c.codePointAt(0))>>>0;return 'u'+h.toString(36)};
-function join(){const k=who.toLowerCase();if(members.some(m=>(m.name||'').toLowerCase()===k))return;setDoc(mc(hid(who)),{name:who,devices:[],ts:Date.now()});note('присоединился к группе')}
+const meOf=()=>{const mid=ls.get('mid');return members.find(m=>m.id===mid)||members.find(m=>(m.name||'').toLowerCase()===(who||'').toLowerCase())};
+function join(){setDoc(mc(hid(who)),{name:who,devices:[],ts:Date.now()});ls.set('mid',hid(who));note('присоединился к группе')}
+function kick(){unsubs.forEach(u=>u());unsubs=[];ls.del('code');ls.del('in');ls.del('mid');code=null;login('Вас исключили из группы.')}
 const note=t=>addDoc(collection(db,'g',code,'log'),{text:`${who} ${t}`,ts:Date.now()}).catch(()=>{});
 const days=()=>cfg.expires?Math.max(0,Math.ceil((new Date(cfg.expires)-new Date())/864e5)):'—';
 async function copy(t){try{await navigator.clipboard.writeText(t)}catch(e){const a=document.createElement('textarea');a.value=t;document.body.appendChild(a);a.select();document.execCommand('copy');a.remove()}toast('Скопировано ✓')}
@@ -109,7 +118,7 @@ function render(){
   if(a==='del'&&confirm('Удалить участника '+m.name+'?')){deleteDoc(mc(m.id));note('удалил участника '+m.name)}
   if(a==='ren'){const n=prompt('Новое имя:',m.name);if(n&&n.trim()){updateDoc(mc(m.id),{name:n.trim()});note(`переименовал ${m.name} → ${n.trim()}`)}}});
 }
-$('#out').onclick=()=>{if(!confirm('Выйти из группы на этом устройстве?'))return;unsubs.forEach(u=>u());ls.del('code');code=null;login()};
+$('#out').onclick=()=>{if(!confirm('Выйти из группы на этом устройстве?'))return;unsubs.forEach(u=>u());ls.del('code');ls.del('in');ls.del('mid');code=null;login()};
 window.__ok=true;
 code&&who?start():login();
 </script></body></html>
