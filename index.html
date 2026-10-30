@@ -54,26 +54,28 @@ const ICON={phone:'📱',desktop:'🖥️',tablet:'📲'};
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const toast=t=>{const e=$('#toast');e.textContent=t;e.classList.add('on');setTimeout(()=>e.classList.remove('on'),1600)};
 const ls={get:k=>{try{return localStorage.getItem(k)}catch(e){return null}},set:(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}},del:k=>{try{localStorage.removeItem(k)}catch(e){}}};
-let code=ls.get('code'),who=ls.get('who'),cfg={key:'',expires:''},members=[],logs=[],unsubs=[];
+let code=ls.get('code'),who=ls.get('who'),cfg={key:'',expires:''},members=[],logs=[],unsubs=[],joined=false;
 
 function login(){
  $('#out').hidden=true;
- app.innerHTML=`<div class="card"><b>🔐 Вход в группу</b><p class="mut">Введите ваше имя и код группы. Код один на всех, его даёт тот, кто создал группу. Новый код создаст новую группу.</p>
- <input id="nm" placeholder="Ваше имя" maxlength="30" value="${esc(who||'')}" style="margin-bottom:8px"><input id="cd" placeholder="Код группы (от 6 символов)" autocapitalize="off" style="margin-bottom:8px"><div class="err" id="er"></div><button class="p" id="go" style="width:100%">Войти</button></div>`;
+ app.innerHTML=`<div class="card"><b>🔐 Вход в группу</b><p class="mut">Введите ваш ник и код группы. Под этим ником вы сразу появитесь в списке участников. Код один на всех, его даёт тот, кто создал группу. Новый код создаст новую группу.</p>
+ <input id="nm" placeholder="Ваш ник" maxlength="30" value="${esc(who||'')}" style="margin-bottom:8px"><input id="cd" placeholder="Код группы (от 6 символов)" autocapitalize="off" style="margin-bottom:8px"><div class="err" id="er"></div><button class="p" id="go" style="width:100%">Войти</button></div>`;
  $('#go').onclick=()=>{const n=$('#nm').value.trim(),c=$('#cd').value.trim().toLowerCase().replace(/[\/\s]/g,'');
-  if(!n)return $('#er').textContent='Введите имя';if(c.length<6)return $('#er').textContent='Код должен быть от 6 символов';
+  if(!n)return $('#er').textContent='Введите ник';if(c.length<6)return $('#er').textContent='Код должен быть от 6 символов';
   who=n;code=c;ls.set('who',n);ls.set('code',c);start()};
 }
 function start(){
- unsubs.forEach(u=>u());unsubs=[];cfg={key:'',expires:''};members=[];logs=[];
+ unsubs.forEach(u=>u());unsubs=[];joined=false;cfg={key:'',expires:''};members=[];logs=[];
  $('#out').hidden=false;render();
  const live=ok=>$('#live').classList.toggle('on',ok);
  const err=e=>{app.innerHTML=`<div class="card"><b>Нет доступа</b><p class="mut">${esc(e.message)}</p></div>`};
  unsubs.push(onSnapshot(doc(db,'g',code,'d','main'),{includeMetadataChanges:true},s=>{live(!s.metadata.fromCache);cfg={key:'',expires:'',...(s.data()||{})};render()},err));
- unsubs.push(onSnapshot(collection(db,'g',code,'members'),s=>{members=s.docs.map(d=>({id:d.id,devices:[],...d.data()})).sort((a,b)=>(a.ts||0)-(b.ts||0));render()},err));
+ unsubs.push(onSnapshot(collection(db,'g',code,'members'),{includeMetadataChanges:true},s=>{members=s.docs.map(d=>({id:d.id,devices:[],...d.data()})).sort((a,b)=>(a.ts||0)-(b.ts||0));render();if(!s.metadata.fromCache&&!joined){joined=true;join()}},err));
  unsubs.push(onSnapshot(query(collection(db,'g',code,'log'),orderBy('ts','desc'),limit(15)),s=>{logs=s.docs.map(d=>d.data());render()},()=>{}));
 }
 const mc=id=>doc(db,'g',code,'members',id);
+const hid=n=>{let h=0;for(const c of n.toLowerCase())h=(h*31+c.codePointAt(0))>>>0;return 'u'+h.toString(36)};
+function join(){const k=who.toLowerCase();if(members.some(m=>(m.name||'').toLowerCase()===k))return;setDoc(mc(hid(who)),{name:who,devices:[],ts:Date.now()});note('присоединился к группе')}
 const note=t=>addDoc(collection(db,'g',code,'log'),{text:`${who} ${t}`,ts:Date.now()}).catch(()=>{});
 const days=()=>cfg.expires?Math.max(0,Math.ceil((new Date(cfg.expires)-new Date())/864e5)):'—';
 async function copy(t){try{await navigator.clipboard.writeText(t)}catch(e){const a=document.createElement('textarea');a.value=t;document.body.appendChild(a);a.select();document.execCommand('copy');a.remove()}toast('Скопировано ✓')}
@@ -89,7 +91,7 @@ function render(){
  <button class="p" id="ck" style="width:100%" ${cfg.key?'':'disabled'}>Скопировать ключ</button></div>
  <div class="card"><div class="row"><b>📅 Подписка до</b><span class="sp"></span><input type="date" id="ex" value="${esc(cfg.expires)}" style="max-width:170px"></div></div><h2>Участники</h2>`;
  if(!members.length)h+='<p class="mut" style="text-align:center">Пока никого нет</p>';
- members.forEach((m,mi)=>{h+=`<div class="card"><div class="m"><div class="av">${esc((m.name[0]||'?').toUpperCase())}</div><div class="sp"><h3 data-a="ren" data-m="${mi}">${esc(m.name)}</h3><small>${m.devices.length} устр.</small></div><button class="s" data-a="add" data-m="${mi}">＋ устройство</button><button class="s d" data-a="del" data-m="${mi}">✕</button></div>`;
+ members.forEach((m,mi)=>{h+=`<div class="card"><div class="m"><div class="av">${esc((m.name[0]||'?').toUpperCase())}</div><div class="sp"><h3 data-a="ren" data-m="${mi}">${esc(m.name)}${m.name.toLowerCase()===(who||'').toLowerCase()?' <small>· вы</small>':''}</h3><small>${m.devices.length} устр.</small></div><button class="s" data-a="add" data-m="${mi}">＋ устройство</button><button class="s d" data-a="del" data-m="${mi}">✕</button></div>`;
   m.devices.forEach((d,i)=>{h+=`<div class="dev"><span>${ICON[d.t]||'🔌'}</span><span class="n">${esc(d.n)}${d.by?` <small>· ${esc(d.by)}</small>`:''}</span><button class="s d" data-a="rd" data-m="${mi}" data-i="${i}">✕</button></div>`});h+='</div>'});
  h+=`<div class="card"><div class="row"><input id="nn" placeholder="Имя нового участника" maxlength="40" value="${esc(keep)}"><button class="p" id="an">Добавить</button></div></div>`;
  if(logs.length)h+='<h2>История</h2><div class="card">'+logs.map(l=>`<div class="lg">${esc(l.text)} · ${fmt(l.ts)}</div>`).join('')+'</div>';
