@@ -83,7 +83,7 @@ function render(){
  if(!code)return;
  const keep=($('#nn')||{}).value||'';
  const dc=members.reduce((a,m)=>a+m.devices.length,0);
- let h=`<div class="stats"><div class="st"><b>${members.length}</b><span>участников</span></div><div class="st"><b>${dc}</b><span>устройств</span></div><div class="st"><b>${days()}</b><span>дней осталось</span></div></div>
+ let h=`<div class="stats"><div class="st"><b>${members.length}</b><span>участников</span></div><div class="st" id="sd" style="cursor:pointer"><b>${cfg.devices!=null?cfg.devices:dc}</b><span>устройств ✎</span></div><div class="st"><b>${days()}</b><span>дней осталось</span></div></div>
  <div class="card"><div class="row"><b>🔑 Ключ доступа</b><span class="sp"></span><button class="s" id="ek">Изменить</button></div>
  <div class="key">${cfg.key?esc(cfg.key):'Ключ ещё не добавлен'}</div>
  <button class="p" id="ck" style="width:100%" ${cfg.key?'':'disabled'}>Скопировать ключ</button></div>
@@ -95,6 +95,9 @@ function render(){
  if(logs.length)h+='<h2>История</h2><div class="card">'+logs.map(l=>`<div class="lg">${esc(l.text)} · ${fmt(l.ts)}</div>`).join('')+'</div>';
  app.innerHTML=h;
  $('#ck').onclick=()=>copy(cfg.key);
+ $('#sd').onclick=()=>{const cur=cfg.devices!=null?cfg.devices:'';const v=prompt('Сколько устройств подключено? Оставьте пустым, чтобы считать по списку ('+dc+').',cur);if(v===null)return;const t=v.trim();
+  if(t===''){setDoc(doc(db,'g',code,'d','main'),{devices:null},{merge:true});note('включил автоподсчёт устройств')}
+  else{const n=parseInt(t,10);if(isNaN(n)||n<0)return toast('Введите число');setDoc(doc(db,'g',code,'d','main'),{devices:n},{merge:true});note('указал количество устройств: '+n)}};
  $('#ek').onclick=()=>{const k=prompt('Новый ключ / ссылка подписки:',cfg.key);if(k===null)return;setDoc(doc(db,'g',code,'d','main'),{key:k.trim()},{merge:true});note('обновил ключ')};
  $('#ex').onchange=e=>{setDoc(doc(db,'g',code,'d','main'),{expires:e.target.value},{merge:true});note('изменил дату подписки')};
  $('#an').onclick=()=>{const n=$('#nn').value.trim();if(!n)return;$('#nn').value='';setDoc(mc('m'+Date.now()),{name:n,devices:[],ts:Date.now()});note('добавил участника '+n)};
